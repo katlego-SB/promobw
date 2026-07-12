@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { CldUploadWidget } from 'next-cloudinary'
 
 type Comment = {
   id: number
@@ -28,10 +29,10 @@ export default function Home() {
   const [commentText, setCommentText] = useState<{[key: number]: string}>({})
   const [showComments, setShowComments] = useState<{[key: number]: boolean}>({})
   const [likedPosts, setLikedPosts] = useState<number[]>([])
+  const [uploadedMedia, setUploadedMedia] = useState('')
 
   const [business, setBusiness] = useState('')
   const [caption, setCaption] = useState('')
-  const [mediaUrl, setMediaUrl] = useState('')
   const [txId, setTxId] = useState('')
 
   useEffect(() => {
@@ -45,10 +46,7 @@ export default function Home() {
       const res = await fetch('/api/posts')
       const data = await res.json()
       setPosts(data)
-
-      data.forEach((post: Post) => {
-        incrementView(post.id)
-      })
+      data.forEach((post: Post) => incrementView(post.id))
     } catch (error) {
       console.log('Failed to fetch posts:', error)
     } finally {
@@ -66,15 +64,10 @@ export default function Home() {
 
   const handleLike = async (postId: number) => {
     if (likedPosts.includes(postId)) return
-
-    setPosts(posts.map(p =>
-      p.id === postId? {...p, likes: p.likes + 1 } : p
-    ))
-
+    setPosts(posts.map(p => p.id === postId? {...p, likes: p.likes + 1 } : p))
     const newLikedPosts = [...likedPosts, postId]
     setLikedPosts(newLikedPosts)
     localStorage.setItem('likedPosts', JSON.stringify(newLikedPosts))
-
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -85,13 +78,11 @@ export default function Home() {
   const handleComment = async (postId: number) => {
     const text = commentText[postId]
     if (!text?.trim()) return
-
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ postId, action: 'comment', commentText: text })
     })
-
     const res = await fetch('/api/posts')
     const updatedPosts = await res.json()
     setPosts(updatedPosts)
@@ -107,16 +98,16 @@ export default function Home() {
       alert('Please enter a valid Transaction ID')
       return
     }
-    if (!business ||!caption ||!mediaUrl) {
-      alert('Please fill all fields')
+    if (!business ||!caption ||!uploadedMedia) {
+      alert('Please fill all fields and upload an image/video')
       return
     }
 
     const newPost = {
       id: Date.now(),
       business: business,
-      mediaUrl: mediaUrl,
-      mediaType: mediaUrl.includes('.mp4')? 'video' : 'image',
+      mediaUrl: uploadedMedia,
+      mediaType: uploadedMedia.includes('.mp4') || uploadedMedia.includes('video')? 'video' : 'image',
       caption: caption,
       isSponsored: true,
       views: 0,
@@ -130,21 +121,17 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPost)
       })
-
       if (!res.ok) throw new Error('Failed to save')
-
       setPosts([newPost as Post,...posts])
       setStep(3)
-
       setTimeout(() => {
         setShowModal(false)
         setStep(1)
         setBusiness('')
         setCaption('')
-        setMediaUrl('')
+        setUploadedMedia('')
         setTxId('')
       }, 2000)
-
     } catch (error) {
       alert('Error saving post. Please try again.')
     }
@@ -164,14 +151,52 @@ export default function Home() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-96 overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h- overflow-y-auto">
             {step === 1 && (
               <>
                 <h2 className="text-xl font-bold mb-4">Step 1: Create Your Post</h2>
-                <input value={business} onChange={e => setBusiness(e.target.value)} placeholder="Business Name" className="w-full border p-2 rounded mb-3" />
-                <input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="Image/Video URL" className="w-full border p-2 rounded mb-3" />
-                <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption" className="w-full border p-2 rounded mb-3" rows={3} />
-                <button onClick={() => setStep(2)} className="w-full bg-blue-600 text-white py-2 rounded-lg">Next: Pay P20</button>
+                <input 
+                  value={business} 
+                  onChange={e => setBusiness(e.target.value)} 
+                  placeholder="Business Name" 
+                  className="w-full border p-2 rounded mb-3" 
+                />
+                
+                <CldUploadWidget 
+                  uploadPreset="promobw"
+                  options={{ sources: ['local', 'camera'], multiple: false, maxFiles: 1 }}
+                  onSuccess={(result: any) => {
+                    setUploadedMedia(result.info.secure_url)
+                  }}
+                >
+                  {({ open }) => (
+                    <button 
+                      onClick={() => open()} 
+                      className="w-full border-2 border-dashed border-gray-300 p-6 rounded mb-3 hover:border-blue-500"
+                    >
+                      {uploadedMedia? '✅ Image/Video Uploaded - Click to change' : '📷 Tap to Upload Photo or Video'}
+                    </button>
+                  )}
+                </CldUploadWidget>
+
+                {uploadedMedia && (
+                  <img src={uploadedMedia} alt="Preview" className="w-full h-40 object-cover rounded mb-3" />
+                )}
+
+                <textarea 
+                  value={caption} 
+                  onChange={e => setCaption(e.target.value)} 
+                  placeholder="Caption - Tell customers about your business" 
+                  className="w-full border p-2 rounded mb-3" 
+                  rows={3} 
+                />
+                <button 
+                  onClick={() => setStep(2)} 
+                  disabled={!business ||!caption ||!uploadedMedia}
+                  className="w-full bg-blue-600 text-white py-2 rounded-lg disabled:bg-gray-300"
+                >
+                  Next: Pay P20
+                </button>
               </>
             )}
             {step === 2 && (
@@ -184,7 +209,7 @@ export default function Home() {
               </>
             )}
             {step === 3 && <><h2 className="text-xl font-bold mb-4 text-green-600">Success!</h2><p>Your post is now live 🎉</p></>}
-            {step!== 3 && <button onClick={() => {setShowModal(false); setStep(1)}} className="w-full mt-2 text-sm text-gray-500">Cancel</button>}
+            {step!== 3 && <button onClick={() => {setShowModal(false); setStep(1); setUploadedMedia('')}} className="w-full mt-2 text-sm text-gray-500">Cancel</button>}
           </div>
         </div>
       )}
@@ -209,21 +234,17 @@ export default function Home() {
                     {post.isSponsored && <span className="text-xs bg-yellow-200 px-2 py-1 rounded">Sponsored</span>}
                   </div>
                   <p className="mb-3">{post.caption}</p>
-
                   <div className="flex gap-4 text-sm text-gray-500 mb-3">
                     <span>{post.views} views</span>
                     <span>{post.likes} likes</span>
                     <span>{post.comments?.length || 0} comments</span>
                   </div>
-
                   <div className="flex gap-2 mb-3">
                     <button
                       onClick={() => handleLike(post.id)}
                       disabled={likedPosts.includes(post.id)}
                       className={`flex-1 py-2 rounded-lg text-sm ${
-                        likedPosts.includes(post.id)
-                        ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                          : 'bg-gray-100 hover:bg-gray-200'
+                        likedPosts.includes(post.id)? 'bg-red-100 text-red-600 cursor-not-allowed' : 'bg-gray-100 hover:bg-gray-200'
                       }`}
                     >
                       {likedPosts.includes(post.id)? '❤️ Liked' : '🤍 Like'}
@@ -235,7 +256,6 @@ export default function Home() {
                       💬 Comment {post.comments?.length > 0 && `(${post.comments.length})`}
                     </button>
                   </div>
-
                   {showComments[post.id] && (
                     <div className="border-t pt-3">
                       <div className="flex gap-2 mb-3">

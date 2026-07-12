@@ -2,6 +2,12 @@
 
 import { useState, useEffect } from 'react'
 
+type Comment = {
+  id: number
+  text: string
+  createdAt: string
+}
+
 type Post = {
   id: number
   business: string
@@ -9,13 +15,18 @@ type Post = {
   mediaType: 'image' | 'video'
   caption: string
   isSponsored: boolean
+  views: number
+  likes: number
+  comments: Comment[]
 }
 
 export default function Home() {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [step, setStep] = useState(1) // 1=form, 2=payment, 3=done
+  const [step, setStep] = useState(1)
+  const [commentText, setCommentText] = useState<{[key: number]: string}>({})
+  const [showComments, setShowComments] = useState<{[key: number]: boolean}>({})
 
   // Form fields
   const [business, setBusiness] = useState('')
@@ -23,7 +34,6 @@ export default function Home() {
   const [mediaUrl, setMediaUrl] = useState('')
   const [txId, setTxId] = useState('')
 
-  // Fetch posts from database on load
   useEffect(() => {
     fetchPosts()
   }, [])
@@ -33,6 +43,11 @@ export default function Home() {
       const res = await fetch('/api/posts')
       const data = await res.json()
       setPosts(data)
+      
+      // Count view for each post on page load
+      data.forEach((post: Post) => {
+        incrementView(post.id)
+      })
     } catch (error) {
       console.log('Failed to fetch posts:', error)
     } finally {
@@ -40,27 +55,74 @@ export default function Home() {
     }
   }
 
+  const incrementView = async (postId: number) => {
+    await fetch('/api/posts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId, action: 'view' })
+    })
+  }
+
+  const handleLike = async (postId: number) => {
+    // Update UI instantly
+    setPosts(posts.map(p => 
+      p.id === postId? {...p, likes: p.likes + 1 } : p
+    ))
+    
+    // Save to DB
+    await fetch('/api/posts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId, action: 'like' })
+    })
+  }
+
+  const handleComment = async (postId: number) => {
+    const text = commentText[postId]
+    if (!text) return
+    
+    const newComment: Comment = {
+      id: Date.now(),
+      text: text,
+      createdAt: new Date().toISOString()
+    }
+    
+    // Update UI instantly
+    setPosts(posts.map(p => 
+      p.id === postId? {...p, comments: [...p.comments, newComment] } : p
+    ))
+    setCommentText({...commentText, [postId]: '' })
+    
+    // Save to DB
+    await fetch('/api/posts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId, action: 'comment', commentText: text })
+    })
+  }
+
   const handleSubmitPost = async () => {
-    // Basic validation
     if (txId.length < 8) {
-      alert('Please enter a valid Transaction ID from Orange Money/MyZaka')
+      alert('Please enter a valid Transaction ID')
       return
     }
-    if (!business || !caption || !mediaUrl) {
+    if (!business ||!caption ||!mediaUrl) {
       alert('Please fill all fields')
       return
     }
 
-    const newPost: Post = {
+    const newPost = {
       id: Date.now(),
       business: business,
       mediaUrl: mediaUrl,
-      mediaType: mediaUrl.includes('.mp4') ? 'video' : 'image',
+      mediaType: mediaUrl.includes('.mp4')? 'video' : 'image',
       caption: caption,
-      isSponsored: true
+      isSponsored: true,
+      views: 0,
+      likes: 0,
+      comments: []
     }
 
-    // Save to database
     try {
       const res = await fetch('/api/posts', {
         method: 'POST',
@@ -70,11 +132,9 @@ export default function Home() {
       
       if (!res.ok) throw new Error('Failed to save')
       
-      // Update UI instantly
-      setPosts([newPost, ...posts])
+      setPosts([newPost as Post,...posts])
       setStep(3)
       
-      // Reset form
       setTimeout(() => {
         setShowModal(false)
         setStep(1)
@@ -86,7 +146,6 @@ export default function Home() {
       
     } catch (error) {
       alert('Error saving post. Please try again.')
-      console.log(error)
     }
   }
 
@@ -102,123 +161,105 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Promote Modal */}
+      {/* Promote Modal - same as before */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-96 overflow-y-auto">
-
             {step === 1 && (
               <>
                 <h2 className="text-xl font-bold mb-4">Step 1: Create Your Post</h2>
-                <input
-                  value={business}
-                  onChange={e => setBusiness(e.target.value)}
-                  placeholder="Business Name"
-                  className="w-full border p-2 rounded mb-3"
-                />
-                <input
-                  value={mediaUrl}
-                  onChange={e => setMediaUrl(e.target.value)}
-                  placeholder="Image/Video URL - paste link here"
-                  className="w-full border p-2 rounded mb-3"
-                />
-                <textarea
-                  value={caption}
-                  onChange={e => setCaption(e.target.value)}
-                  placeholder="Caption - e.g. 'Special P50 today, Block 3'"
-                  className="w-full border p-2 rounded mb-3"
-                  rows={3}
-                />
-                <button
-                  onClick={() => setStep(2)}
-                  className="w-full bg-blue-600 text-white py-2 rounded-lg"
-                >
-                  Next: Pay P20
-                </button>
+                <input value={business} onChange={e => setBusiness(e.target.value)} placeholder="Business Name" className="w-full border p-2 rounded mb-3" />
+                <input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="Image/Video URL" className="w-full border p-2 rounded mb-3" />
+                <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption" className="w-full border p-2 rounded mb-3" rows={3} />
+                <button onClick={() => setStep(2)} className="w-full bg-blue-600 text-white py-2 rounded-lg">Next: Pay P20</button>
               </>
             )}
-
             {step === 2 && (
               <>
                 <h2 className="text-xl font-bold mb-4">Step 2: Pay P20</h2>
-                <p className="text-sm text-gray-600 mb-4">
-                  1. Scan QR with Orange Money or MyZaka<br/>
-                  2. Pay P20 to 72 320 961<br/>
-                  3. Copy the Transaction ID from SMS
-                </p>
-
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-center mb-1">Orange Money</p>
-                    <img src="/orange-qr.png" alt="Orange Money QR" className="w-full border rounded" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-center mb-1">Mascom MyZaka</p>
-                    <img src="/myzaka-qr.png" alt="MyZaka QR" className="w-full border rounded" />
-                  </div>
-                </div>
-
-                <input
-                  value={txId}
-                  onChange={e => setTxId(e.target.value)}
-                  placeholder="Paste Transaction ID here"
-                  className="w-full border p-2 rounded mb-3"
-                />
-                <button
-                  onClick={handleSubmitPost}
-                  className="w-full bg-green-600 text-white py-2 rounded-lg mb-2"
-                >
-                  Submit & Post Now
-                </button>
-                <button
-                  onClick={() => setStep(1)}
-                  className="w-full bg-gray-200 py-2 rounded-lg text-sm"
-                >
-                  Back
-                </button>
+                <p className="text-sm text-gray-600 mb-4">Pay P20 to 72 320 961 via Orange Money/MyZaka</p>
+                <input value={txId} onChange={e => setTxId(e.target.value)} placeholder="Paste Transaction ID" className="w-full border p-2 rounded mb-3" />
+                <button onClick={handleSubmitPost} className="w-full bg-green-600 text-white py-2 rounded-lg mb-2">Submit & Post Now</button>
+                <button onClick={() => setStep(1)} className="w-full bg-gray-200 py-2 rounded-lg text-sm">Back</button>
               </>
             )}
-
-            {step === 3 && (
-              <>
-                <h2 className="text-xl font-bold mb-4 text-green-600">Success!</h2>
-                <p>Your post is now live on PromoBW 🎉</p>
-              </>
-            )}
-
-            {step !== 3 && (
-              <button
-                onClick={() => {setShowModal(false); setStep(1)}}
-                className="w-full mt-2 text-sm text-gray-500"
-              >
-                Cancel
-              </button>
-            )}
+            {step === 3 && <><h2 className="text-xl font-bold mb-4 text-green-600">Success!</h2><p>Your post is now live 🎉</p></>}
+            {step!== 3 && <button onClick={() => {setShowModal(false); setStep(1)}} className="w-full mt-2 text-sm text-gray-500">Cancel</button>}
           </div>
         </div>
       )}
 
-      {/* Feed */}
-      {loading ? (
+      {/* Feed with Likes/Comments/Views */}
+      {loading? (
         <p className="text-center text-gray-500">Loading posts...</p>
       ) : (
         <div className="space-y-6">
-          {posts.length === 0 ? (
+          {posts.length === 0? (
             <p className="text-center text-gray-500">No posts yet. Be the first!</p>
           ) : (
             posts.map(post => (
               <div key={post.id} className="border rounded-xl overflow-hidden">
-                {post.mediaType === 'video' ? (
+                {post.mediaType === 'video'? (
                   <video src={post.mediaUrl} controls className="w-full h-64 object-cover" />
                 ) : (
                   <img src={post.mediaUrl} alt="" className="w-full h-64 object-cover" />
                 )}
                 <div className="p-4">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between mb-2">
                     <p className="font-bold">{post.business}</p>
                     {post.isSponsored && <span className="text-xs bg-yellow-200 px-2 py-1 rounded">Sponsored</span>}
                   </div>
-                  <p className="mt-2">{post.caption}</p>
+                  <p className="mb-3">{post.caption}</p>
+                  
+                  {/* Stats Row */}
+                  <div className="flex gap-4 text-sm text-gray-500 mb-3">
+                    <span>{post.views} views</span>
+                    <span>{post.likes} likes</span>
+                    <span>{post.comments.length} comments</span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 mb-3">
+                    <button 
+                      onClick={() => handleLike(post.id)}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm"
+                    >
+                      ❤️ Like
+                    </button>
+                    <button 
+                      onClick={() => setShowComments({...showComments, [post.id]:!showComments[post.id]})}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm"
+                    >
+                      💬 Comment
+                    </button>
+                  </div>
+
+                  {/* Comments Section */}
+                  {showComments[post.id] && (
+                    <div className="border-t pt-3">
+                      <div className="flex gap-2 mb-3">
+                        <input 
+                          value={commentText[post.id] || ''}
+                          onChange={e => setCommentText({...commentText, [post.id]: e.target.value})}
+                          placeholder="Add a comment..."
+                          className="flex-1 border p-2 rounded text-sm"
+                        />
+                        <button 
+                          onClick={() => handleComment(post.id)}
+                          className="bg-blue-600 text-white px-4 py-2 rounded text-sm"
+                        >
+                          Post
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {post.comments.map(comment => (
+                          <div key={comment.id} className="text-sm bg-gray-50 p-2 rounded">
+                            {comment.text}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))

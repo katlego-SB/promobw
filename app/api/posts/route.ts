@@ -21,10 +21,18 @@ type Post = {
   comments: Comment[]
 }
 
-// GET all posts
+// GET all posts - FIXED FOR OLD POSTS
 export async function GET() {
-  const posts = await redis.get<Post[]>('posts') || []
-  return NextResponse.json(posts)
+  const posts = await redis.get<any[]>('posts') || []
+  
+  const safePosts = posts.map(post => ({
+  ...post,
+    views: post.views ?? 0,
+    likes: post.likes ?? 0,
+    comments: post.comments ?? []
+  }))
+  
+  return NextResponse.json(safePosts)
 }
 
 // POST new post
@@ -47,22 +55,30 @@ export async function POST(req: NextRequest) {
 // PATCH for likes/views/comments
 export async function PATCH(req: NextRequest) {
   const { postId, action, commentText } = await req.json()
-  const posts = await redis.get<Post[]>('posts') || []
+  const posts = await redis.get<any[]>('posts') || []
   
   const updatedPosts = posts.map(post => {
-    if (post.id === postId) {
-      if (action === 'view') return {...post, views: post.views + 1 }
-      if (action === 'like') return {...post, likes: post.likes + 1 }
+    // Ensure old posts have fields before updating
+    const safePost = {
+    ...post,
+      views: post.views ?? 0,
+      likes: post.likes ?? 0,
+      comments: post.comments ?? []
+    }
+    
+    if (safePost.id === postId) {
+      if (action === 'view') return {...safePost, views: safePost.views + 1 }
+      if (action === 'like') return {...safePost, likes: safePost.likes + 1 }
       if (action === 'comment') {
         const newComment: Comment = {
           id: Date.now(),
           text: commentText,
           createdAt: new Date().toISOString()
         }
-        return {...post, comments: [...post.comments, newComment] }
+        return {...safePost, comments: [...safePost.comments, newComment] }
       }
     }
-    return post
+    return safePost
   })
   
   await redis.set('posts', updatedPosts)

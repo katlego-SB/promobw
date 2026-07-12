@@ -27,6 +27,7 @@ export default function Home() {
   const [step, setStep] = useState(1)
   const [commentText, setCommentText] = useState<{[key: number]: string}>({})
   const [showComments, setShowComments] = useState<{[key: number]: boolean}>({})
+  const [likedPosts, setLikedPosts] = useState<number[]>([])
 
   const [business, setBusiness] = useState('')
   const [caption, setCaption] = useState('')
@@ -34,6 +35,9 @@ export default function Home() {
   const [txId, setTxId] = useState('')
 
   useEffect(() => {
+    // Load liked posts from localStorage
+    const savedLikes = JSON.parse(localStorage.getItem('likedPosts') || '[]')
+    setLikedPosts(savedLikes)
     fetchPosts()
   }, [])
 
@@ -42,8 +46,7 @@ export default function Home() {
       const res = await fetch('/api/posts')
       const data = await res.json()
       setPosts(data)
-      
-      // Count view for each post
+
       data.forEach((post: Post) => {
         incrementView(post.id)
       })
@@ -63,10 +66,20 @@ export default function Home() {
   }
 
   const handleLike = async (postId: number) => {
-    setPosts(posts.map(p => 
+    // Prevent multiple likes
+    if (likedPosts.includes(postId)) return
+
+    // Update UI instantly
+    setPosts(posts.map(p =>
       p.id === postId? {...p, likes: p.likes + 1 } : p
     ))
-    
+
+    // Save liked state
+    const newLikedPosts = [...likedPosts, postId]
+    setLikedPosts(newLikedPosts)
+    localStorage.setItem('likedPosts', JSON.stringify(newLikedPosts))
+
+    // Save to DB
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -76,24 +89,20 @@ export default function Home() {
 
   const handleComment = async (postId: number) => {
     const text = commentText[postId]
-    if (!text) return
-    
-    const newComment: Comment = {
-      id: Date.now(),
-      text: text,
-      createdAt: new Date().toISOString()
-    }
-    
-    setPosts(posts.map(p => 
-      p.id === postId? {...p, comments: [...p.comments, newComment] } : p
-    ))
-    setCommentText({...commentText, [postId]: '' })
-    
+    if (!text?.trim()) return
+
+    // Save to DB first
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ postId, action: 'comment', commentText: text })
     })
+
+    // Then refetch to get updated comments from DB
+    const res = await fetch('/api/posts')
+    const updatedPosts = await res.json()
+    setPosts(updatedPosts)
+    setCommentText({...commentText, [postId]: '' })
   }
 
   const handleSubmitPost = async () => {
@@ -124,12 +133,12 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPost)
       })
-      
+
       if (!res.ok) throw new Error('Failed to save')
-      
+
       setPosts([newPost as Post,...posts])
       setStep(3)
-      
+
       setTimeout(() => {
         setShowModal(false)
         setStep(1)
@@ -138,7 +147,7 @@ export default function Home() {
         setMediaUrl('')
         setTxId('')
       }, 2000)
-      
+
     } catch (error) {
       alert('Error saving post. Please try again.')
     }
@@ -203,7 +212,7 @@ export default function Home() {
                     {post.isSponsored && <span className="text-xs bg-yellow-200 px-2 py-1 rounded">Sponsored</span>}
                   </div>
                   <p className="mb-3">{post.caption}</p>
-                  
+
                   <div className="flex gap-4 text-sm text-gray-500 mb-3">
                     <span>{post.views} views</span>
                     <span>{post.likes} likes</span>
@@ -211,13 +220,18 @@ export default function Home() {
                   </div>
 
                   <div className="flex gap-2 mb-3">
-                    <button 
+                    <button
                       onClick={() => handleLike(post.id)}
-                      className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm"
+                      disabled={likedPosts.includes(post.id)}
+                      className={`flex-1 py-2 rounded-lg text-sm ${
+                        likedPosts.includes(post.id)
+                         ? 'bg-red-100 text-red-600 cursor-not-allowed'
+                          : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
                     >
-                      ❤️ Like
+                      {likedPosts.includes(post.id)? '❤️ Liked' : '🤍 Like'}
                     </button>
-                    <button 
+                    <button
                       onClick={() => setShowComments({...showComments, [post.id]:!showComments[post.id]})}
                       className="flex-1 bg-gray-100 hover:bg-gray-200 py-2 rounded-lg text-sm"
                     >
@@ -228,13 +242,13 @@ export default function Home() {
                   {showComments[post.id] && (
                     <div className="border-t pt-3">
                       <div className="flex gap-2 mb-3">
-                        <input 
+                        <input
                           value={commentText[post.id] || ''}
                           onChange={e => setCommentText({...commentText, [post.id]: e.target.value})}
                           placeholder="Add a comment..."
                           className="flex-1 border p-2 rounded text-sm"
                         />
-                        <button 
+                        <button
                           onClick={() => handleComment(post.id)}
                           className="bg-blue-600 text-white px-4 py-2 rounded text-sm"
                         >
@@ -242,11 +256,15 @@ export default function Home() {
                         </button>
                       </div>
                       <div className="space-y-2 max-h-32 overflow-y-auto">
-                        {post.comments.map(comment => (
-                          <div key={comment.id} className="text-sm bg-gray-50 p-2 rounded">
-                            {comment.text}
-                          </div>
-                        ))}
+                        {post.comments.length === 0? (
+                          <p className="text-sm text-gray-400">No comments yet</p>
+                        ) : (
+                          post.comments.map(comment => (
+                            <div key={comment.id} className="text-sm bg-gray-50 p-2 rounded">
+                              {comment.text}
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   )}

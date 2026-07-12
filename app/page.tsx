@@ -28,7 +28,6 @@ export default function Home() {
   const [commentText, setCommentText] = useState<{[key: number]: string}>({})
   const [showComments, setShowComments] = useState<{[key: number]: boolean}>({})
 
-  // Form fields
   const [business, setBusiness] = useState('')
   const [caption, setCaption] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
@@ -44,7 +43,7 @@ export default function Home() {
       const data = await res.json()
       setPosts(data)
       
-      // Count view for each post on page load
+      // Count view for each post
       data.forEach((post: Post) => {
         incrementView(post.id)
       })
@@ -64,12 +63,10 @@ export default function Home() {
   }
 
   const handleLike = async (postId: number) => {
-    // Update UI instantly
     setPosts(posts.map(p => 
       p.id === postId? {...p, likes: p.likes + 1 } : p
     ))
     
-    // Save to DB
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -87,13 +84,11 @@ export default function Home() {
       createdAt: new Date().toISOString()
     }
     
-    // Update UI instantly
     setPosts(posts.map(p => 
       p.id === postId? {...p, comments: [...p.comments, newComment] } : p
     ))
     setCommentText({...commentText, [postId]: '' })
     
-    // Save to DB
     await fetch('/api/posts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -161,7 +156,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Promote Modal - same as before */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-96 overflow-y-auto">
@@ -189,7 +183,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Feed with Likes/Comments/Views */}
       {loading? (
         <p className="text-center text-gray-500">Loading posts...</p>
       ) : (
@@ -211,14 +204,12 @@ export default function Home() {
                   </div>
                   <p className="mb-3">{post.caption}</p>
                   
-                  {/* Stats Row */}
                   <div className="flex gap-4 text-sm text-gray-500 mb-3">
                     <span>{post.views} views</span>
                     <span>{post.likes} likes</span>
                     <span>{post.comments.length} comments</span>
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="flex gap-2 mb-3">
                     <button 
                       onClick={() => handleLike(post.id)}
@@ -234,7 +225,6 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Comments Section */}
                   {showComments[post.id] && (
                     <div className="border-t pt-3">
                       <div className="flex gap-2 mb-3">

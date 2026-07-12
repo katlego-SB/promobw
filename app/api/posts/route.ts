@@ -32,9 +32,8 @@ export async function POST(req: NextRequest) {
   const newPost: Post = await req.json()
   const posts = await redis.get<Post[]>('posts') || []
   
-  // Add defaults for engagement
   const postWithStats: Post = {
-   ...newPost,
+  ...newPost,
     views: 0,
     likes: 0,
     comments: []
@@ -45,7 +44,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(postWithStats)
 }
 
-// PATCH to update views/likes/comments
+// PATCH for likes/views/comments
 export async function PATCH(req: NextRequest) {
   const { postId, action, commentText } = await req.json()
   const posts = await redis.get<Post[]>('posts') || []

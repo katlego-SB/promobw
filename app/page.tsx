@@ -129,7 +129,7 @@ export default function Home() {
                 <h2 className="text-xl font-bold mb-4">Step 2: Pay P20</h2>
                 <p className="text-sm text-gray-600 mb-4">
                   1. Scan QR with Orange Money or MyZaka<br/>
-                  2. Pay P20 to 72 000 000<br/>
+                  2. Pay P20 to 72 320 961<br/>
                   3. Copy the Transaction ID from SMS
                 </p>
 

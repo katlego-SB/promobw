@@ -16,7 +16,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const newPost = await request.json()
-    const posts = await redis.get('posts') || []
+    const posts = (await redis.get('posts') || []) as any[]
     const updatedPosts = [newPost, ...posts]
     await redis.set('posts', updatedPosts)
     return NextResponse.json(newPost)

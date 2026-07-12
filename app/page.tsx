@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 type Post = {
   id: number
@@ -11,27 +11,9 @@ type Post = {
   isSponsored: boolean
 }
 
-const initialPosts: Post[] = [
-  {
-    id: 1,
-    business: "Mma's Kitchen",
-    mediaUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    mediaType: 'video',
-    caption: "Lunch special P45 today!",
-    isSponsored: true
-  },
-  {
-    id: 2,
-    business: "Gabs Cuts",
-    mediaUrl: "https://picsum.photos/600/400",
-    mediaType: 'image',
-    caption: "Fresh fades P80, Block 8",
-    isSponsored: true
-  },
-]
-
 export default function Home() {
-  const [posts, setPosts] = useState<Post[]>(initialPosts)
+  const [posts, setPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [step, setStep] = useState(1) // 1=form, 2=payment, 3=done
 
@@ -41,39 +23,71 @@ export default function Home() {
   const [mediaUrl, setMediaUrl] = useState('')
   const [txId, setTxId] = useState('')
 
-  const handleSubmitPost = () => {
-    // Basic validation - check TxID looks like Orange Money format
+  // Fetch posts from database on load
+  useEffect(() => {
+    fetchPosts()
+  }, [])
+
+  const fetchPosts = async () => {
+    try {
+      const res = await fetch('/api/posts')
+      const data = await res.json()
+      setPosts(data)
+    } catch (error) {
+      console.log('Failed to fetch posts:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmitPost = async () => {
+    // Basic validation
     if (txId.length < 8) {
       alert('Please enter a valid Transaction ID from Orange Money/MyZaka')
       return
     }
-    if (!business ||!caption ||!mediaUrl) {
+    if (!business || !caption || !mediaUrl) {
       alert('Please fill all fields')
       return
     }
 
-    // Add new post to top of feed instantly
     const newPost: Post = {
-      id: Date.now(), // unique ID
+      id: Date.now(),
       business: business,
       mediaUrl: mediaUrl,
-      mediaType: mediaUrl.includes('.mp4')? 'video' : 'image',
+      mediaType: mediaUrl.includes('.mp4') ? 'video' : 'image',
       caption: caption,
       isSponsored: true
     }
 
-    setPosts([newPost,...posts]) // Add to top
-
-    // Reset form
-    setStep(3)
-    setTimeout(() => {
-      setShowModal(false)
-      setStep(1)
-      setBusiness('')
-      setCaption('')
-      setMediaUrl('')
-      setTxId('')
-    }, 2000)
+    // Save to database
+    try {
+      const res = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost)
+      })
+      
+      if (!res.ok) throw new Error('Failed to save')
+      
+      // Update UI instantly
+      setPosts([newPost, ...posts])
+      setStep(3)
+      
+      // Reset form
+      setTimeout(() => {
+        setShowModal(false)
+        setStep(1)
+        setBusiness('')
+        setCaption('')
+        setMediaUrl('')
+        setTxId('')
+      }, 2000)
+      
+    } catch (error) {
+      alert('Error saving post. Please try again.')
+      console.log(error)
+    }
   }
 
   return (
@@ -91,7 +105,7 @@ export default function Home() {
       {/* Promote Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h- overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-96 overflow-y-auto">
 
             {step === 1 && (
               <>
@@ -172,7 +186,7 @@ export default function Home() {
               </>
             )}
 
-            {step!== 3 && (
+            {step !== 3 && (
               <button
                 onClick={() => {setShowModal(false); setStep(1)}}
                 className="w-full mt-2 text-sm text-gray-500"
@@ -185,24 +199,32 @@ export default function Home() {
       )}
 
       {/* Feed */}
-      <div className="space-y-6">
-        {posts.map(post => (
-          <div key={post.id} className="border rounded-xl overflow-hidden">
-            {post.mediaType === 'video'? (
-              <video src={post.mediaUrl} controls className="w-full h-64 object-cover" />
-            ) : (
-              <img src={post.mediaUrl} alt="" className="w-full h-64 object-cover" />
-            )}
-            <div className="p-4">
-              <div className="flex justify-between">
-                <p className="font-bold">{post.business}</p>
-                {post.isSponsored && <span className="text-xs bg-yellow-200 px-2 py-1 rounded">Sponsored</span>}
+      {loading ? (
+        <p className="text-center text-gray-500">Loading posts...</p>
+      ) : (
+        <div className="space-y-6">
+          {posts.length === 0 ? (
+            <p className="text-center text-gray-500">No posts yet. Be the first!</p>
+          ) : (
+            posts.map(post => (
+              <div key={post.id} className="border rounded-xl overflow-hidden">
+                {post.mediaType === 'video' ? (
+                  <video src={post.mediaUrl} controls className="w-full h-64 object-cover" />
+                ) : (
+                  <img src={post.mediaUrl} alt="" className="w-full h-64 object-cover" />
+                )}
+                <div className="p-4">
+                  <div className="flex justify-between">
+                    <p className="font-bold">{post.business}</p>
+                    {post.isSponsored && <span className="text-xs bg-yellow-200 px-2 py-1 rounded">Sponsored</span>}
+                  </div>
+                  <p className="mt-2">{post.caption}</p>
+                </div>
               </div>
-              <p className="mt-2">{post.caption}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+            ))
+          )}
+        </div>
+      )}
     </main>
   )
 }
